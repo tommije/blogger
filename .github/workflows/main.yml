@@ -1,0 +1,51 @@
+name: Build and Deploy Blog
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Install Hugo
+      run: |
+        HUGO_VERSION="0.111.3"
+        wget https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_${HUGO_VERSION}_Linux-64bit.tar.gz
+        tar xvzf hugo_${HUGO_VERSION}_Linux-64bit.tar.gz
+        sudo mv hugo /usr/local/bin/
+
+    - name: Build Hugo Site
+      run: hugo --minify
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v1
+      with:
+        terraform_version: 1.4.4
+
+    - name: Terraform Initialize
+      run: terraform init
+
+    - name: Terraform Validate
+      run: terraform validate
+
+    - name: Terraform Apply
+      run: terraform apply -auto-approve
+      env:
+        ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+        ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+        ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+        ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+
+    - name: Set up Azure CLI
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Deploy to Azure Storage
+      run: |
+        az storage blob upload-batch --destination '$web' --source public --account-name $(terraform output -raw storage_account_name) --account-key $(terraform output -raw primary_access_key)
